@@ -1,12 +1,35 @@
-# read training data
-train=read.csv("train.csv",stringsAsFactors=FALSE)
-table(train$Pclass,train$Survived) # this shows that most passengers who died were of 3rd class
-table(train$Pclass,train$Survived,train$Sex) # this shows that almost all male passengersof 3rd class died
-# read test data
-test=read.csv("test.csv",stringsAsFactors=FALSE)
+# load all relevant packages
+library(caTools)
+library(ROCR)
+library(mice)
+library(tm)
+library(SnowballC)
+library(rpart)
+library(rpart.plot)
+library(ggplot2)
+library(randomForest)
+library(caret)
+library(e1071)
+library(rattle)
+library(RColorBrewer)
+library(Amelia)
 
+# read training and test input data 
+train_input=read.csv("train.csv",stringsAsFactors=FALSE)
+test_input=read.csv("test.csv",stringsAsFactors=FALSE)
+
+
+train=train_input
+test=test_input
+
+str(train)
+str(test)
 # There are missing values in Age, Embarked,Fare variables. Let us combine train and
 # test data and try to fill the missing values with appropriate values based on other variables
+
+
+table(train$Pclass,train$Survived) # this shows that most passengers who died were of 3rd class
+table(train$Pclass,train$Survived,train$Sex) # this shows that almost all male passengersof 3rd class died
 
 Survived=train$Survived
 
@@ -14,6 +37,7 @@ train$Survived=NULL
 colnames(train)
 
 alldata=rbind(train,test)
+
 str(alldata)
 summary(alldata)
 
@@ -56,6 +80,8 @@ alldata$Title[1]
 alldata$Title=sub(" ","",alldata$Title)
 table(alldata$Title)
 
+alldata2=alldata
+
 # FILLING MISSING AGE VALUES
 
 
@@ -95,22 +121,86 @@ summary(alldata)
 #============================
 # ************   METHOD 2: by doing a linear regression with Age as theindependent variable
 #=============================
+str(alldata2)
+colnames(alldata2)
+summary(alldata2)
+linregAge=lm(Age~ Pclass+Sex+SibSp+Parch+Embarked+Title+Fare,data=alldata2)
+summary(linregAge)
+linregAge.pred=predict(linregAge,alldata2)
+length(linregAge.pred)
+alldata2$Age[which(is.na(alldata2$Age))]=linregAge.pred[which(is.na(alldata2$Age))]
+summary(alldata2)
 
+# Thus we have A dataset alldata2 which has all Age values filled by Liner regression
+# as explained above for Method 2
 
+# we will run all algorithms on the datasets formed by both Method 1 and Mehtod2
 
+#================================================================
 
+#Let us divide the alldata into training and test set as before
 
+train1=head(alldata,nrow(train_input))
+test1=tail(alldata,nrow(test_input))
+train1$Survived= Survived
+str(train1)
 
+#-----------
+# similarly for the dataset created by Method 2
+train2=head(alldata2,nrow(train_input))
+test2=tail(alldata2,nrow(test_input))
+train2$Survived= Survived
+str(train2)
 
+#=====================
+#LOGISTIC REGRESSION :#
+#=====================
+# Dataset obtained by Method 1
 
+logreg1=glm(Survived~ Pclass+Sex+Age+SibSp+Embarked,data=train1)
+summary(logreg1)
+logreg1.predtrain=predict(logreg1,type="response")
 
+#Finding appropriate threshold from ROC
+ROCR=prediction(logreg1.predtrain,train1$Survived)
+ROCCurve=performance(ROCR,"tpr","fpr")
+plot(ROCCurve,colorize=T)
+# The ROC curve shows that 0.6 will be a good threshold value
 
+table(train1$Survived,logreg1.predtrain>=0.6) # to test the train set accuracy
+# 81.8%
+# Apply the threshold to the test set
+logreg1.predtest=(predict(logreg1,type="response",newdata=test1)>=0.6)
+PassengerId =test1$PassengerId
+Survived=ifelse(logreg1.predtest>=0.6,1,0)
+submit=data.frame(PassengerId,Survived)
+write.csv(submit,file="submit.csv",row.names=FALSE)
+table(submit$Survived)
 
+#-----------------------------------------------------------------
+# Dataset obtained by Method 2
 
+logreg2=glm(Survived~Pclass+Sex+Age+SibSp+Embarked,data=train2)
+summary(logreg2)
+logreg2.predtrain=predict(logreg2,type="response")
+#Finding appropriate threshold from ROC
+ROCR2=prediction(logreg2.predtrain,train2$Survived)
+ROCCurve2=performance(ROCR2,"tpr","fpr")
+plot(ROCCurve2,colorize=T)
+# The ROC curve2 shows that 0.6 will be a good threshold value
 
+# to test the train set accuracy
+table(train2$Survived,logreg2.predtrain>=0.6)
+# 81.9%
+# Apply the threshold to the test set
+logreg2.predtest=(predict(logreg2,type="response",newdata=test2)>=0.6)
+PassengerId =test2$PassengerId
+Survived=ifelse(logreg2.predtest>=0.6,1,0)
+submit2=data.frame(PassengerId,Survived)
+write.csv(submit2,file="submit2.csv",row.names=FALSE)
+table(submit2$Survived)
 
-
-
+#=====================================================================
 
 
 
