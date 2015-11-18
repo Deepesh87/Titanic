@@ -151,6 +151,14 @@ train2=head(alldata2,nrow(train_input))
 test2=tail(alldata2,nrow(test_input))
 train2$Survived= Survived
 str(train2)
+#=========================================================
+#                 ********* TABLEAU ***********
+#=========================================================
+# as can be seen in --->  https://public.tableau.com/profile/publish/Titanic_Female_Pclass3/Dashboard1#!/publish-confirm
+# All female passengers of Class 3 who payed above $25 have not survived. We will do the same in the test set
+
+# we will overwrite this logic above all our Output of the Models
+
 
 #=====================
 #LOGISTIC REGRESSION :#
@@ -171,11 +179,18 @@ table(train1$Survived,logreg1.predtrain>=0.6) # to test the train set accuracy
 # 81.8%
 # Apply the threshold to the test set
 logreg1.predtest=(predict(logreg1,type="response",newdata=test1)>=0.6)
+
+test1$Survived=ifelse(logreg1.predtest>=0.6,1,0)
+test1$Survived[which(test1$Pclass==3 & test1$Fare>=25)]=0
+
 PassengerId =test1$PassengerId
-Survived=ifelse(logreg1.predtest>=0.6,1,0)
+Survived=test1$Survived
+
 submit=data.frame(PassengerId,Survived)
+
 write.csv(submit,file="submit.csv",row.names=FALSE)
 table(submit$Survived)
+
 
 #-----------------------------------------------------------------
 # Dataset obtained by Method 2
@@ -194,15 +209,18 @@ table(train2$Survived,logreg2.predtrain>=0.6)
 # 81.9%
 # Apply the threshold to the test set
 logreg2.predtest=(predict(logreg2,type="response",newdata=test2)>=0.6)
+
 PassengerId =test2$PassengerId
-Survived=ifelse(logreg2.predtest>=0.6,1,0)
+
+test2$Survived=ifelse(logreg2.predtest>=0.6,1,0)
+test2$Survived[which(test2$Pclass==3 & test2$Fare>=25)]=0
+Survived=test2$Survived
+
 submit2=data.frame(PassengerId,Survived)
 write.csv(submit2,file="submit2.csv",row.names=FALSE)
 table(submit2$Survived)
 
 #=====================================================================
-
-
 
 
 
