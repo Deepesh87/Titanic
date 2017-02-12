@@ -220,7 +220,201 @@ submit2=data.frame(PassengerId,Survived)
 write.csv(submit2,file="submit2.csv",row.names=FALSE)
 table(submit2$Survived)
 
-#=====================================================================
+#=====================================================================new analysis
+#________________________________________________________________________________________________________________________-----
+#$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+
+train_input=read.csv("train.csv")
+test_input=read.csv("test.csv")
+train=train_input#make copy of train
+test=test_input#make copy of test
+#delete Survived in train and merge train and test
+train$Survived=NULL
+all=rbind(train,test)
+str(all)
+summary(all)
+#lets start filling the missing values
+#row no. of Fare missing
+which(is.na(all$Fare))
+all$Fare[is.na(all$Fare)]=mean(all$Fare[all$Pclass==all$Pclass[is.na(all$Fare)] & all$Embarked==all$Embarked[is.na(all$Fare)]],na.rm=T)
+#fill missing embarked
+table(all$Embarked)
+# fill the missing table with most embarked i.e S
+all$Embarked[all$Embarked==""]='S'
+#check
+table(all$Embarked)
+#relevel the factors
+all$Embarked=factor(all$Embarked)
+#__________________________________________
+#fill the missing ages based on the Names
+#split names into separate Title, First and last name
+all$Name=as.character(all$Name)
+all$last=sapply(all$Name,function(x){strsplit(x,"[,.]")[[1]][1]})
+all$title=sapply(all$Name,function(x){strsplit(x,"[,.]")[[1]][2]})
+all$title=sub(" ","",all$title)
+all$last=as.factor(all$last)
+all$title=as.factor(all$title)
+table(all$title,is.na(all$Age))
+#write a function which outputs the mean age
+#if given a Title
+fun=function(x){
+  return(mean(all$Age[all$title==x],na.rm=T))
+}
+#fill the missing ages
+all$Age[all$title=="Dr"& is.na(all$Age)]=fun("Dr")
+all$Age[all$title=="Master"& is.na(all$Age)]=fun("Master")
+all$Age[all$title=="Mrs"& is.na(all$Age)]=fun("Mrs")
+all$Age[all$title=="Ms"& is.na(all$Age)]=fun("Ms")
+all$Age[all$title=="Mr"& is.na(all$Age)]=fun("Mr")
+all$Age[all$title=="Miss"& is.na(all$Age)]=fun("Miss")
+#****************************************
+#we change the Fare=0 to the mean Fare of each Pclass
+all$Fare[all$Fare==0 & all$Pclass==1]=mean(all$Fare[all$Pclass==1])
+all$Fare[all$Fare==0 & all$Pclass==2]=mean(all$Fare[all$Pclass==2])
+all$Fare[all$Fare==0 & all$Pclass==3]=mean(all$Fare[all$Pclass==3])
+#*****************************************
+library(ggplot2)
+train_input$Survived=as.factor(train_input$Survived)
+ggplot(data=train_input,aes(x=SibSp+1+Parch,fill=Survived))+ geom_histogram()
+#above shows more than those with more than 4 family members did not survive
+#create a new variables wich gves the total family size
+all$FamSize=sapply(all$SibSp+all$Parch+1,sum)
+table(all$FamSize)
+#**************************************************************************
+#Ticket number
+sum(all$Ticket=="")#count blanks
+head(all$Ticket,10)
+#extract first letter/number and the total # of letters/characters in the ticket
+func1=function(x){nchar(x)}
+all$Ticket_char_no=sapply((as.character(all$Ticket)),func1)
+func2=function(x){
+  strsplit(x,"")[[1]][1]
+}
+all$Ticket_first_no=sapply((as.character(all$Ticket)),func2)
+all$Ticket_first_no=as.factor(all$Ticket_first_no)
+all$Ticket_char_no=as.factor(all$Ticket_char_no)
+#**************************************************************************
+#CABIN number
+#the first letter in the cabin number might be useful
+#use func2 made above
+all$Cabin_num=sapply(as.character(all$Cabin),func2)
+all$Cabin_num=as.factor(all$Cabin_num)
+
+all$Pclass=as.factor(all$Pclass)
+#_________________________________________________________________
+#lets do a clustering and see if that helps
+set.seed(1) # for reproducibility
+library(dplyr)
+library(ISLR)
+library(cluster)
+library(Rtsne)
+#calculate Gower's Distance
+gower_dist <- daisy(all[, c(-1,-3,-8,-10)],
+                    metric = "gower",
+                    type = list(logratio = 3))
+summary(gower_dist)
+#print out the most similar and dissimilar pair 
+gower_mat <- as.matrix(gower_dist)
+#most similar
+all[
+  which(gower_mat == min(gower_mat[gower_mat != min(gower_mat)]),
+        arr.ind = TRUE)[1, ], ]
+#most different
+all[
+  which(gower_mat == max(gower_mat[gower_mat != max(gower_mat)]),
+        arr.ind = TRUE)[1, ], ]
+#************
+#selecting number of clusters
+#silhoutte width
+sil_width <- c(NA)
+for(i in 2:10){pam_fit <- pam(gower_dist,diss = TRUE,k = i)
+                              sil_width[i] <- pam_fit$silinfo$avg.width}
+
+# Plot sihouette width (higher is better)
+plot(1:10, sil_width,
+     xlab = "Number of clusters",
+     ylab = "Silhouette Width")
+lines(1:10, sil_width)
+#2
+pam_fit <- pam(gower_dist, diss = TRUE, k = 2)
+#names(pam_fit)
+all$cluster=pam_fit$clustering
+all$cluster=as.factor(all$cluster)
+#______________________________________________________________________
+#count the number of letters in name
+func3=function(x){
+  nchar(as.character(x))
+}
+all$name_count=sapply(all$Name,func3)
+#*************************************
+#split data back to train and test
+train=head(all,nrow(train_input))
+test=tail(all,nrow(test_input))
+train$Survived=train_input$Survived
+#************************************************************************
+############################LOGISTIC REGRESSION
+logreg=glm(Survived~Pclass+Sex+Age+Embarked+FamSize+Ticket_char_no+Ticket_first_no+name_count,data=train,family="binomial")
+summary(logreg)
+logreg.pred=predict(logreg,type="response")
+table(logreg.pred>0.5,train$Survived)
+#81.4% on training
+#lets find the threshold from the ROC curve
+library(ROCR)
+ROCR=prediction(logreg.pred,train$Survived)
+ROCCurve=performance(ROCR,"tpr","fpr")
+plot(ROCCurve,colorize=T)
+#looks like 0.60 is a good threshold
+#predict on test
+logreg.pred2=predict(logreg,newdata=test,type="response")
+test$Survived=ifelse(logreg.pred2>0.6,1,0)
+submit=test[,c("PassengerId","Survived")]
+write.csv(submit,"sub_12thFeb_lm.csv",row.names = F)
+#This scored poorly on leaderboard 
+#only 77%
+#*************************************************************************
+#************************************************************************
+#lets build a decision rf to identify the important variables
+library(randomForest)
+rf=randomForest(Survived~Pclass+Embarked+cluster+Ticket_char_no+Ticket_first_no+Sex+Age+Fare+FamSize+title+name_count,data=train,ntree=500,nodesize=8,mtry=9)
+names(rf)
+var=importance(rf)
+var
+#predict
+rf.pred=predict(rf,newdata=test)
+test$Survived=rf.pred
+submit2=test[,c("PassengerId","Survived")]
+write.csv(submit2,"sub_12thFeb_rf1.csv",row.names = F)
+#*******************************************************
+#cross validation
+library(caret)
+library(e1071)
+numfolds=trainControl(method="cv",number=10) # cv= cross validation, 10 folds
+cpgrid=expand.grid(.cp=seq(0.0001,0.2,0.001))
+train(Survived~Pclass+Embarked+cluster+Ticket_char_no+Ticket_first_no+Sex+Age+Fare+FamSize+title+name_count,data=train,method="rpart",trControl=numfolds,tuneGrid=cpgrid)
+# here we used method="rpart"since we are cross validating a cart model
+rf2=randomForest(Survived~Pclass+Embarked+cluster+Ticket_char_no+Ticket_first_no+Sex+Age+Fare+FamSize+title,data=train,cp=0.0041)
+predictCV=predict(rf2,newdata=test,type="class")
+test$Survived=predictCV
+submit3=test[,c("PassengerId","Survived")]
+write.csv(submit3,"sub_12thFeb_rf_cv1.csv",row.names = F)
+#*******************************************************
+#random search for the mtry parameter
+#http://machinelearningmastery.com/tune-machine-learning-algorithms-in-r/
+library(caret)
+control <- trainControl(method="repeatedcv", number=10, repeats=3, search="grid")
+set.seed(1)
+tunegrid <- expand.grid(.mtry=c(3:9))
+rf_gridsearch <- train(Survived~Pclass+Embarked+cluster+Ticket_char_no+Ticket_first_no+Sex+Age+Fare+FamSize+title,data=train, method="rf", metric=metric, tuneGrid=tunegrid, trControl=control)
+print(rf_gridsearch)
+plot(rf_gridsearch)
+#*******************
+
+
+
+
+
+
+
 
 
 
